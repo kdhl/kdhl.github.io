@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>D3 Chart</title>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: transparent; font-family: Arial, sans-serif; }
+    .bar { fill: #4e79a7; }
+    .bar:hover { fill: #f28e2b; }
+    .axis text { font-size: 12px; }
+  </style>
+</head>
+<body>
+  <svg id="chart"></svg>
+
+  <script>
+    const data = [
+      { label: "Jan", value: 30 },
+      { label: "Feb", value: 80 },
+      { label: "Mar", value: 45 },
+      { label: "Apr", value: 60 },
+      { label: "May", value: 20 },
+      { label: "Jun", value: 90 },
+    ];
+
+    const margin = { top: 20, right: 20, bottom: 40, left: 50 };
+    const width = window.innerWidth - margin.left - margin.right;
+    const height = window.innerHeight - margin.top - margin.bottom;
+
+    const svg = d3.select("#chart")
+      .attr("width", width + margin.left + margin.right)
+      .attr("height", height + margin.top + margin.bottom)
+      .append("g")
+      .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const x = d3.scaleBand().domain(data.map(d => d.label))
+      .range([0, width]).padding(0.3);
+
+    const y = d3.scaleLinear().domain([0, d3.max(data, d => d.value)])
+      .nice().range([height, 0]);
+
+    svg.append("g").attr("transform", `translate(0,${height})`)
+      .call(d3.axisBottom(x));
+
+    svg.append("g").call(d3.axisLeft(y));
+
+    svg.selectAll(".bar").data(data).enter()
+      .append("rect")
+      .attr("class", "bar")
+      .attr("x", d => x(d.label))
+      .attr("y", d => y(d.value))
+      .attr("width", x.bandwidth())
+      .attr("height", d => height - y(d.value));
+  </script>
+</body>
+</html>
