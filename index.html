@@ -4,12 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Waterdiepte – Paleispark</title>
-
-  <!-- ArcGIS Identity Manager for OAuth -->
-  <link rel="stylesheet" href="https://js.arcgis.com/4.29/esri/themes/light/main.css" />
-  <script src="https://js.arcgis.com/4.29/"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
-
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -21,27 +16,6 @@
       display: flex;
       flex-direction: column;
     }
-
-    #auth-bar {
-      background: #00497a;
-      color: #fff;
-      font-size: 12px;
-      padding: 6px 16px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      min-height: 32px;
-    }
-    #auth-bar button {
-      background: rgba(255,255,255,0.15);
-      border: 1px solid rgba(255,255,255,0.4);
-      color: #fff;
-      padding: 3px 10px;
-      border-radius: 3px;
-      cursor: pointer;
-      font-size: 12px;
-    }
-    #auth-bar button:hover { background: rgba(255,255,255,0.28); }
 
     #main {
       flex: 1;
@@ -104,57 +78,12 @@
       color: #999;
       text-align: center;
       pointer-events: none;
+      width: 80%;
     }
-
-    #login-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.45);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 100;
-    }
-    #login-box {
-      background: #fff;
-      border-radius: 8px;
-      padding: 32px 28px;
-      text-align: center;
-      max-width: 320px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.18);
-    }
-    #login-box h2 { font-size: 16px; color: #00497a; margin-bottom: 8px; }
-    #login-box p { font-size: 13px; color: #666; margin-bottom: 20px; }
-    #login-box button {
-      background: #00497a;
-      color: #fff;
-      border: none;
-      padding: 10px 24px;
-      border-radius: 4px;
-      font-size: 14px;
-      cursor: pointer;
-    }
-    #login-box button:hover { background: #00608f; }
   </style>
 </head>
 <body>
 
-<!-- Auth bar -->
-<div id="auth-bar">
-  <span id="auth-status">Niet ingelogd</span>
-  <button id="auth-btn">Inloggen via ArcGIS</button>
-</div>
-
-<!-- Login overlay (shown until authenticated) -->
-<div id="login-overlay">
-  <div id="login-box">
-    <h2>Waterdiepte Paleispark</h2>
-    <p>Log in met je ArcGIS-account om de meetgegevens te bekijken.</p>
-    <button id="overlay-login-btn">Inloggen via ArcGIS</button>
-  </div>
-</div>
-
-<!-- Main content -->
 <div id="main">
   <div id="header">
     <span id="meetpunt-label">Selecteer een meetpunt op de kaart</span>
@@ -167,97 +96,77 @@
   </div>
   <div id="chart-wrap">
     <div id="chart"></div>
-    <div id="status">Wacht op selectie van een meetpunt…</div>
+    <div id="status">Selecteer een meetpunt op de kaart om metingen te bekijken.</div>
   </div>
 </div>
 
 <script>
-// ─── CONFIG ──────────────────────────────────────────────────────────────────
+// ─── CONFIG ───────────────────────────────────────────────────────────────────
+// The metingen feature layer (layer 3)
 const FEATURE_LAYER_URL = "https://services2.arcgis.com/hZdFa5fDjbrKiphq/arcgis/rest/services/waterpeilen_paleispark_WFL1/FeatureServer/3";
-const PORTAL_URL        = "https://www.arcgis.com";
-// TODO: replace with your registered OAuth App ID from ArcGIS Developers
-const CLIENT_ID         = "O2ZD4IaVO2W29SdO";
 
 // Field names in the metingen layer
-const FIELD_DATE     = "datum";
-const FIELD_DEPTH    = "meting";
-const FIELD_FK       = "FK";
+const FIELD_DATE  = "datum";
+const FIELD_DEPTH = "meting";
+const FIELD_FK    = "FK";
 
 const MONTHS_NL = ['jan','feb','mrt','apr','mei','jun','jul','aug','sep','okt','nov','dec'];
 
-// ─── STATE ───────────────────────────────────────────────────────────────────
-let currentToken  = null;
+// ─── STATE ────────────────────────────────────────────────────────────────────
 let lastMeetpuntId = null;
 
-// ─── ARCGIS IDENTITY / OAUTH ─────────────────────────────────────────────────
-require([
-  "esri/identity/OAuthInfo",
-  "esri/identity/IdentityManager"
-], function(OAuthInfo, IdentityManager) {
+// ─── TOKEN: inherit from ArcGIS Dashboard parent window ──────────────────────
+// The dashboard is already authenticated. We ask the parent for a token
+// via postMessage, or fall back to reading esriJSAPIOAuth from localStorage
+// which ArcGIS JS API writes after login in the same origin session.
+function getToken() {
+  // 1. Try esri JS API session stored in localStorage (same-origin ArcGIS Online)
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.includes("esri")) {
+        const val = JSON.parse(localStorage.getItem(key));
+        if (val && val.token) return val.token;
+        if (val && Array.isArray(val.credentials)) {
+          for (const c of val.credentials) {
+            if (c.token) return c.token;
+          }
+        }
+      }
+    }
+  } catch(e) {}
 
-  const info = new OAuthInfo({
-    appId: CLIENT_ID,
-    portalUrl: PORTAL_URL,
-    popup: true
-  });
-  IdentityManager.registerOAuthInfos([info]);
+  // 2. Try sessionStorage
+  try {
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i);
+      if (key && key.includes("esri")) {
+        const val = JSON.parse(sessionStorage.getItem(key));
+        if (val && val.token) return val.token;
+      }
+    }
+  } catch(e) {}
 
-  function doLogin() {
-    IdentityManager.getCredential(PORTAL_URL + "/sharing").then(cred => {
-      currentToken = cred.token;
-      document.getElementById("auth-status").textContent = "Ingelogd als " + (cred.userId || "gebruiker");
-      document.getElementById("auth-btn").textContent = "Uitloggen";
-      document.getElementById("login-overlay").style.display = "none";
-      // If URL already has a meetpunt param, load it now
-      const params = new URLSearchParams(window.location.search);
-      const fk = params.get("meetpunt");
-      if (fk) loadMeetpunt(fk);
-    }).catch(err => {
-      console.error("Login mislukt:", err);
-    });
-  }
+  return null;
+}
 
-  function doLogout() {
-    IdentityManager.destroyCredentials();
-    currentToken = null;
-    document.getElementById("auth-status").textContent = "Niet ingelogd";
-    document.getElementById("auth-btn").textContent = "Inloggen via ArcGIS";
-    document.getElementById("login-overlay").style.display = "flex";
-    document.getElementById("status").textContent = "Wacht op selectie van een meetpunt…";
-    document.getElementById("meetpunt-label").textContent = "Selecteer een meetpunt op de kaart";
-    document.getElementById("meetpunt-sub").textContent = "";
-    document.getElementById("chart").innerHTML = "";
-  }
-
-  document.getElementById("auth-btn").addEventListener("click", () => {
-    if (currentToken) doLogout(); else doLogin();
-  });
-  document.getElementById("overlay-login-btn").addEventListener("click", doLogin);
-
-  // Check if already signed in (e.g. page refresh)
-  IdentityManager.checkSignInStatus(PORTAL_URL + "/sharing").then(cred => {
-    currentToken = cred.token;
-    document.getElementById("auth-status").textContent = "Ingelogd als " + (cred.userId || "gebruiker");
-    document.getElementById("auth-btn").textContent = "Uitloggen";
-    document.getElementById("login-overlay").style.display = "none";
-    const params = new URLSearchParams(window.location.search);
-    const fk = params.get("meetpunt");
-    if (fk) loadMeetpunt(fk);
-  }).catch(() => {
-    // Not signed in yet — overlay stays visible
-  });
-});
-
-// ─── URL PARAM WATCHER ───────────────────────────────────────────────────────
-// ESRI dashboards update the iframe src when a feature is selected.
-// We watch for URL changes via a polling fallback (iframes can't use popstate).
+// ─── URL PARAM WATCHER ────────────────────────────────────────────────────────
+// ArcGIS Dashboard rewrites the iframe src when a feature is selected.
+// Iframes can't use popstate, so we poll the URL.
 setInterval(() => {
   const params = new URLSearchParams(window.location.search);
   const fk = params.get("meetpunt");
-  if (fk && fk !== lastMeetpuntId && currentToken) {
+  if (fk && fk !== lastMeetpuntId) {
     loadMeetpunt(fk);
   }
 }, 800);
+
+// Also run once on page load
+window.addEventListener("DOMContentLoaded", () => {
+  const params = new URLSearchParams(window.location.search);
+  const fk = params.get("meetpunt");
+  if (fk) loadMeetpunt(fk);
+});
 
 // ─── DATA FETCH ───────────────────────────────────────────────────────────────
 async function loadMeetpunt(fkValue) {
@@ -267,18 +176,27 @@ async function loadMeetpunt(fkValue) {
   document.getElementById("meetpunt-label").textContent = "Meetpunt: " + fkValue;
   document.getElementById("meetpunt-sub").textContent = "";
 
-  // GlobalID values must be wrapped in curly braces for ArcGIS GUID queries
+  // GlobalID must be wrapped in { } for ArcGIS GUID queries
   const guidValue = fkValue.startsWith("{") ? fkValue : `{${fkValue}}`;
   const where  = encodeURIComponent(`${FIELD_FK} = '${guidValue}'`);
   const fields = encodeURIComponent(`${FIELD_DATE},${FIELD_DEPTH},${FIELD_FK}`);
-  const url    = `${FEATURE_LAYER_URL}/query?where=${where}&outFields=${fields}&orderByFields=${FIELD_DATE}+ASC&f=json&token=${currentToken}`;
+
+  // Build URL — add token only if we have one
+  const token = getToken();
+  const tokenParam = token ? `&token=${token}` : "";
+  const url = `${FEATURE_LAYER_URL}/query?where=${where}&outFields=${fields}&orderByFields=${FIELD_DATE}+ASC&f=json${tokenParam}`;
 
   try {
     const res  = await fetch(url);
     const json = await res.json();
 
     if (json.error) {
-      document.getElementById("status").textContent = "Fout: " + json.error.message;
+      // Token may have expired — show a helpful message
+      if (json.error.code === 498 || json.error.code === 499) {
+        document.getElementById("status").textContent = "Sessie verlopen. Herlaad het dashboard en probeer opnieuw.";
+      } else {
+        document.getElementById("status").textContent = "Fout: " + json.error.message;
+      }
       return;
     }
 
@@ -313,14 +231,14 @@ function drawChart(raw) {
   const iw = W - margin.left - margin.right;
   const ih = H - margin.top - margin.bottom;
 
-  const minDate = d3.timeMonth.offset(d3.min(raw, d => d.date), -0.5);
-  const maxDate = d3.timeMonth.offset(d3.max(raw, d => d.date),  0.5);
+  const minDate  = d3.timeMonth.offset(d3.min(raw, d => d.date), -0.5);
+  const maxDate  = d3.timeMonth.offset(d3.max(raw, d => d.date),  0.5);
   const depthMin = d3.min(raw, d => d.depth);
   const depthMax = d3.max(raw, d => d.depth);
-  const pad = (depthMax - depthMin) * 0.12 || 10;
+  const pad      = (depthMax - depthMin) * 0.12 || 10;
 
   const x = d3.scaleTime().domain([minDate, maxDate]).range([0, iw]);
-  // Inverted: larger depth value = lower on chart
+  // Inverted: larger depth = lower on chart
   const y = d3.scaleLinear().domain([depthMin - pad, depthMax + pad]).range([0, ih]);
 
   const svg = d3.select(container).append("svg")
@@ -344,7 +262,7 @@ function drawChart(raw) {
       .attr("stroke", "rgba(136,135,128,0.1)").attr("stroke-width", 1);
   });
 
-  // Month count for color coding
+  // Month count for dot colour
   const moCount = {};
   raw.forEach(d => {
     const k = d.date.getFullYear() + "-" + d.date.getMonth();
@@ -358,8 +276,7 @@ function drawChart(raw) {
   // Line segments
   for (let i = 0; i < raw.length - 1; i++) {
     const a = raw[i], b = raw[i + 1];
-    const gap     = monthGap(a.date, b.date);
-    const missing = gap > 1;
+    const missing = monthGap(a.date, b.date) > 1;
     g.append("line")
       .attr("x1", x(a.date)).attr("y1", y(a.depth))
       .attr("x2", x(b.date)).attr("y2", y(b.depth))
@@ -414,16 +331,13 @@ function drawChart(raw) {
   raw.forEach(d => {
     const k     = d.date.getFullYear() + "-" + d.date.getMonth();
     const color = moCount[k] > 1 ? "#E24B4A" : "#378ADD";
-    const cx    = x(d.date) + margin.left;
-    const cy    = y(d.depth) + margin.top;
-
     g.append("circle")
       .attr("cx", x(d.date)).attr("cy", y(d.depth))
       .attr("r", 5)
       .attr("fill", color)
       .attr("stroke", "#fff").attr("stroke-width", 1.5)
       .style("cursor", "pointer")
-      .on("mouseover", function(event) {
+      .on("mouseover", function() {
         const label = `${d.date.getDate()} ${MONTHS_NL[d.date.getMonth()]} ${d.date.getFullYear()}: ${d.depth} cm`;
         tooltip.style("display", "block").text(label);
       })
