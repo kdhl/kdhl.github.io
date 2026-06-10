@@ -267,7 +267,9 @@ async function loadMeetpunt(fkValue) {
   document.getElementById("meetpunt-label").textContent = "Meetpunt: " + fkValue;
   document.getElementById("meetpunt-sub").textContent = "";
 
-  const where  = encodeURIComponent(`${FIELD_FK} = '${fkValue}'`);
+  // GlobalID values must be wrapped in curly braces for ArcGIS GUID queries
+  const guidValue = fkValue.startsWith("{") ? fkValue : `{${fkValue}}`;
+  const where  = encodeURIComponent(`${FIELD_FK} = '${guidValue}'`);
   const fields = encodeURIComponent(`${FIELD_DATE},${FIELD_DEPTH},${FIELD_FK}`);
   const url    = `${FEATURE_LAYER_URL}/query?where=${where}&outFields=${fields}&orderByFields=${FIELD_DATE}+ASC&f=json&token=${currentToken}`;
 
