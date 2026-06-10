@@ -1,59 +1,441 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="nl">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>D3 Chart</title>
-  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Waterdiepte – Paleispark</title>
+
+  <!-- ArcGIS Identity Manager for OAuth -->
+  <link rel="stylesheet" href="https://js.arcgis.com/4.29/esri/themes/light/main.css" />
+  <script src="https://js.arcgis.com/4.29/"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: transparent; font-family: Arial, sans-serif; }
-    .bar { fill: #4e79a7; }
-    .bar:hover { fill: #f28e2b; }
-    .axis text { font-size: 12px; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #f5f7fa;
+      color: #333;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #auth-bar {
+      background: #00497a;
+      color: #fff;
+      font-size: 12px;
+      padding: 6px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 32px;
+    }
+    #auth-bar button {
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.4);
+      color: #fff;
+      padding: 3px 10px;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    #auth-bar button:hover { background: rgba(255,255,255,0.28); }
+
+    #main {
+      flex: 1;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    #header {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    #meetpunt-label {
+      font-size: 16px;
+      font-weight: 600;
+      color: #00497a;
+    }
+    #meetpunt-sub {
+      font-size: 12px;
+      color: #888;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      font-size: 11px;
+      color: #666;
+      align-items: center;
+    }
+    .legend-item { display: flex; align-items: center; gap: 5px; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+    .dashed-box {
+      border: 1px dashed #999;
+      padding: 1px 7px;
+      border-radius: 3px;
+    }
+
+    #chart-wrap {
+      background: #fff;
+      border-radius: 6px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+      padding: 12px 8px 4px 8px;
+      flex: 1;
+      min-height: 260px;
+      position: relative;
+    }
+
+    #chart svg { width: 100%; display: block; overflow: visible; }
+
+    #status {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 13px;
+      color: #999;
+      text-align: center;
+      pointer-events: none;
+    }
+
+    #login-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.45);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    #login-box {
+      background: #fff;
+      border-radius: 8px;
+      padding: 32px 28px;
+      text-align: center;
+      max-width: 320px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+    }
+    #login-box h2 { font-size: 16px; color: #00497a; margin-bottom: 8px; }
+    #login-box p { font-size: 13px; color: #666; margin-bottom: 20px; }
+    #login-box button {
+      background: #00497a;
+      color: #fff;
+      border: none;
+      padding: 10px 24px;
+      border-radius: 4px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    #login-box button:hover { background: #00608f; }
   </style>
 </head>
 <body>
-  <svg id="chart"></svg>
 
-  <script>
-    const data = [
-      { label: "Jan", value: 30 },
-      { label: "Feb", value: 80 },
-      { label: "Mar", value: 45 },
-      { label: "Apr", value: 60 },
-      { label: "May", value: 20 },
-      { label: "Jun", value: 90 },
-    ];
+<!-- Auth bar -->
+<div id="auth-bar">
+  <span id="auth-status">Niet ingelogd</span>
+  <button id="auth-btn">Inloggen via ArcGIS</button>
+</div>
 
-    const margin = { top: 20, right: 20, bottom: 40, left: 50 };
-    const width = window.innerWidth - margin.left - margin.right;
-    const height = window.innerHeight - margin.top - margin.bottom;
+<!-- Login overlay (shown until authenticated) -->
+<div id="login-overlay">
+  <div id="login-box">
+    <h2>Waterdiepte Paleispark</h2>
+    <p>Log in met je ArcGIS-account om de meetgegevens te bekijken.</p>
+    <button id="overlay-login-btn">Inloggen via ArcGIS</button>
+  </div>
+</div>
 
-    const svg = d3.select("#chart")
-      .attr("width", width + margin.left + margin.right)
-      .attr("height", height + margin.top + margin.bottom)
-      .append("g")
-      .attr("transform", `translate(${margin.left},${margin.top})`);
+<!-- Main content -->
+<div id="main">
+  <div id="header">
+    <span id="meetpunt-label">Selecteer een meetpunt op de kaart</span>
+    <span id="meetpunt-sub"></span>
+  </div>
+  <div class="legend">
+    <div class="legend-item"><span class="dot" style="background:#378ADD;"></span> 1 x per maand</div>
+    <div class="legend-item"><span class="dot" style="background:#E24B4A;"></span> Vaker per maand</div>
+    <div class="legend-item"><span class="dashed-box">Stippellijn = ontbrekend</span></div>
+  </div>
+  <div id="chart-wrap">
+    <div id="chart"></div>
+    <div id="status">Wacht op selectie van een meetpunt…</div>
+  </div>
+</div>
 
-    const x = d3.scaleBand().domain(data.map(d => d.label))
-      .range([0, width]).padding(0.3);
+<script>
+// ─── CONFIG ──────────────────────────────────────────────────────────────────
+const FEATURE_LAYER_URL = "https://services2.arcgis.com/hZdFa5fDjbrKiphq/arcgis/rest/services/waterpeilen_paleispark_WFL1/FeatureServer/3";
+const PORTAL_URL        = "https://www.arcgis.com";
+// TODO: replace with your registered OAuth App ID from ArcGIS Developers
+const CLIENT_ID         = "O2ZD4IaVO2W29SdO";
 
-    const y = d3.scaleLinear().domain([0, d3.max(data, d => d.value)])
-      .nice().range([height, 0]);
+// Field names in the metingen layer
+const FIELD_DATE     = "datum";
+const FIELD_DEPTH    = "meting";
+const FIELD_FK       = "FK";
 
-    svg.append("g").attr("transform", `translate(0,${height})`)
-      .call(d3.axisBottom(x));
+const MONTHS_NL = ['jan','feb','mrt','apr','mei','jun','jul','aug','sep','okt','nov','dec'];
 
-    svg.append("g").call(d3.axisLeft(y));
+// ─── STATE ───────────────────────────────────────────────────────────────────
+let currentToken  = null;
+let lastMeetpuntId = null;
 
-    svg.selectAll(".bar").data(data).enter()
-      .append("rect")
-      .attr("class", "bar")
-      .attr("x", d => x(d.label))
-      .attr("y", d => y(d.value))
-      .attr("width", x.bandwidth())
-      .attr("height", d => height - y(d.value));
-  </script>
+// ─── ARCGIS IDENTITY / OAUTH ─────────────────────────────────────────────────
+require([
+  "esri/identity/OAuthInfo",
+  "esri/identity/IdentityManager"
+], function(OAuthInfo, IdentityManager) {
+
+  const info = new OAuthInfo({
+    appId: CLIENT_ID,
+    portalUrl: PORTAL_URL,
+    popup: true
+  });
+  IdentityManager.registerOAuthInfos([info]);
+
+  function doLogin() {
+    IdentityManager.getCredential(PORTAL_URL + "/sharing").then(cred => {
+      currentToken = cred.token;
+      document.getElementById("auth-status").textContent = "Ingelogd als " + (cred.userId || "gebruiker");
+      document.getElementById("auth-btn").textContent = "Uitloggen";
+      document.getElementById("login-overlay").style.display = "none";
+      // If URL already has a meetpunt param, load it now
+      const params = new URLSearchParams(window.location.search);
+      const fk = params.get("meetpunt");
+      if (fk) loadMeetpunt(fk);
+    }).catch(err => {
+      console.error("Login mislukt:", err);
+    });
+  }
+
+  function doLogout() {
+    IdentityManager.destroyCredentials();
+    currentToken = null;
+    document.getElementById("auth-status").textContent = "Niet ingelogd";
+    document.getElementById("auth-btn").textContent = "Inloggen via ArcGIS";
+    document.getElementById("login-overlay").style.display = "flex";
+    document.getElementById("status").textContent = "Wacht op selectie van een meetpunt…";
+    document.getElementById("meetpunt-label").textContent = "Selecteer een meetpunt op de kaart";
+    document.getElementById("meetpunt-sub").textContent = "";
+    document.getElementById("chart").innerHTML = "";
+  }
+
+  document.getElementById("auth-btn").addEventListener("click", () => {
+    if (currentToken) doLogout(); else doLogin();
+  });
+  document.getElementById("overlay-login-btn").addEventListener("click", doLogin);
+
+  // Check if already signed in (e.g. page refresh)
+  IdentityManager.checkSignInStatus(PORTAL_URL + "/sharing").then(cred => {
+    currentToken = cred.token;
+    document.getElementById("auth-status").textContent = "Ingelogd als " + (cred.userId || "gebruiker");
+    document.getElementById("auth-btn").textContent = "Uitloggen";
+    document.getElementById("login-overlay").style.display = "none";
+    const params = new URLSearchParams(window.location.search);
+    const fk = params.get("meetpunt");
+    if (fk) loadMeetpunt(fk);
+  }).catch(() => {
+    // Not signed in yet — overlay stays visible
+  });
+});
+
+// ─── URL PARAM WATCHER ───────────────────────────────────────────────────────
+// ESRI dashboards update the iframe src when a feature is selected.
+// We watch for URL changes via a polling fallback (iframes can't use popstate).
+setInterval(() => {
+  const params = new URLSearchParams(window.location.search);
+  const fk = params.get("meetpunt");
+  if (fk && fk !== lastMeetpuntId && currentToken) {
+    loadMeetpunt(fk);
+  }
+}, 800);
+
+// ─── DATA FETCH ───────────────────────────────────────────────────────────────
+async function loadMeetpunt(fkValue) {
+  lastMeetpuntId = fkValue;
+  document.getElementById("status").textContent = "Gegevens laden…";
+  document.getElementById("chart").innerHTML = "";
+  document.getElementById("meetpunt-label").textContent = "Meetpunt: " + fkValue;
+  document.getElementById("meetpunt-sub").textContent = "";
+
+  const where  = encodeURIComponent(`${FIELD_FK} = '${fkValue}'`);
+  const fields = encodeURIComponent(`${FIELD_DATE},${FIELD_DEPTH},${FIELD_FK}`);
+  const url    = `${FEATURE_LAYER_URL}/query?where=${where}&outFields=${fields}&orderByFields=${FIELD_DATE}+ASC&f=json&token=${currentToken}`;
+
+  try {
+    const res  = await fetch(url);
+    const json = await res.json();
+
+    if (json.error) {
+      document.getElementById("status").textContent = "Fout: " + json.error.message;
+      return;
+    }
+
+    const features = json.features || [];
+    if (features.length === 0) {
+      document.getElementById("status").textContent = "Geen metingen gevonden voor dit meetpunt.";
+      return;
+    }
+
+    const raw = features.map(f => ({
+      date:  new Date(f.attributes[FIELD_DATE]),
+      depth: f.attributes[FIELD_DEPTH]
+    })).filter(d => d.date && d.depth != null);
+
+    document.getElementById("status").textContent = "";
+    document.getElementById("meetpunt-sub").textContent = raw.length + " metingen";
+    drawChart(raw);
+
+  } catch(e) {
+    document.getElementById("status").textContent = "Netwerkfout bij laden van gegevens.";
+    console.error(e);
+  }
+}
+
+// ─── CHART ────────────────────────────────────────────────────────────────────
+function drawChart(raw) {
+  const container = document.getElementById("chart");
+  container.innerHTML = "";
+
+  const W = 620, H = 280;
+  const margin = { top: 20, right: 20, bottom: 52, left: 55 };
+  const iw = W - margin.left - margin.right;
+  const ih = H - margin.top - margin.bottom;
+
+  const minDate = d3.timeMonth.offset(d3.min(raw, d => d.date), -0.5);
+  const maxDate = d3.timeMonth.offset(d3.max(raw, d => d.date),  0.5);
+  const depthMin = d3.min(raw, d => d.depth);
+  const depthMax = d3.max(raw, d => d.depth);
+  const pad = (depthMax - depthMin) * 0.12 || 10;
+
+  const x = d3.scaleTime().domain([minDate, maxDate]).range([0, iw]);
+  // Inverted: larger depth value = lower on chart
+  const y = d3.scaleLinear().domain([depthMin - pad, depthMax + pad]).range([0, ih]);
+
+  const svg = d3.select(container).append("svg")
+    .attr("viewBox", `0 0 ${W} ${H}`)
+    .attr("width", "100%")
+    .style("overflow", "visible");
+
+  const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+  // Grid
+  y.ticks(5).forEach(t => {
+    g.append("line")
+      .attr("x1", 0).attr("x2", iw)
+      .attr("y1", y(t)).attr("y2", y(t))
+      .attr("stroke", "rgba(136,135,128,0.15)").attr("stroke-width", 1);
+  });
+  d3.timeMonths(minDate, maxDate).forEach(m => {
+    g.append("line")
+      .attr("x1", x(m)).attr("x2", x(m))
+      .attr("y1", 0).attr("y2", ih)
+      .attr("stroke", "rgba(136,135,128,0.1)").attr("stroke-width", 1);
+  });
+
+  // Month count for color coding
+  const moCount = {};
+  raw.forEach(d => {
+    const k = d.date.getFullYear() + "-" + d.date.getMonth();
+    moCount[k] = (moCount[k] || 0) + 1;
+  });
+
+  function monthGap(a, b) {
+    return (b.getFullYear() - a.getFullYear()) * 12 + b.getMonth() - a.getMonth();
+  }
+
+  // Line segments
+  for (let i = 0; i < raw.length - 1; i++) {
+    const a = raw[i], b = raw[i + 1];
+    const gap     = monthGap(a.date, b.date);
+    const missing = gap > 1;
+    g.append("line")
+      .attr("x1", x(a.date)).attr("y1", y(a.depth))
+      .attr("x2", x(b.date)).attr("y2", y(b.depth))
+      .attr("stroke", missing ? "rgba(136,135,128,0.45)" : "#378ADD")
+      .attr("stroke-width", 2)
+      .attr("stroke-dasharray", missing ? "6 4" : "none");
+  }
+
+  // X axis
+  const xAxis = g.append("g").attr("transform", `translate(0,${ih})`);
+  xAxis.append("line").attr("x1", 0).attr("x2", iw).attr("stroke", "rgba(136,135,128,0.3)");
+  d3.timeMonths(minDate, maxDate).forEach(m => {
+    const lbl = MONTHS_NL[m.getMonth()] + " " + String(m.getFullYear()).slice(2);
+    xAxis.append("text")
+      .attr("x", x(m)).attr("y", 18)
+      .attr("text-anchor", "end")
+      .attr("transform", `rotate(-40, ${x(m)}, 18)`)
+      .attr("fill", "#888780").attr("font-size", 11)
+      .text(lbl);
+  });
+
+  // Y axis
+  const yAxis = g.append("g");
+  yAxis.append("line").attr("x1", 0).attr("x2", 0).attr("y1", 0).attr("y2", ih).attr("stroke", "rgba(136,135,128,0.3)");
+  y.ticks(5).forEach(t => {
+    yAxis.append("text")
+      .attr("x", -8).attr("y", y(t) + 4)
+      .attr("text-anchor", "end")
+      .attr("fill", "#888780").attr("font-size", 11)
+      .text(t);
+  });
+  g.append("text")
+    .attr("transform", "rotate(-90)")
+    .attr("x", -ih / 2).attr("y", -42)
+    .attr("text-anchor", "middle")
+    .attr("fill", "#888780").attr("font-size", 12)
+    .text("Diepte (cm)");
+
+  // Tooltip
+  const tooltip = d3.select(container).append("div")
+    .style("position", "absolute")
+    .style("background", "#fff")
+    .style("border", "1px solid #ddd")
+    .style("border-radius", "4px")
+    .style("padding", "6px 10px")
+    .style("font-size", "12px")
+    .style("pointer-events", "none")
+    .style("box-shadow", "0 2px 8px rgba(0,0,0,0.12)")
+    .style("display", "none");
+
+  // Points
+  raw.forEach(d => {
+    const k     = d.date.getFullYear() + "-" + d.date.getMonth();
+    const color = moCount[k] > 1 ? "#E24B4A" : "#378ADD";
+    const cx    = x(d.date) + margin.left;
+    const cy    = y(d.depth) + margin.top;
+
+    g.append("circle")
+      .attr("cx", x(d.date)).attr("cy", y(d.depth))
+      .attr("r", 5)
+      .attr("fill", color)
+      .attr("stroke", "#fff").attr("stroke-width", 1.5)
+      .style("cursor", "pointer")
+      .on("mouseover", function(event) {
+        const label = `${d.date.getDate()} ${MONTHS_NL[d.date.getMonth()]} ${d.date.getFullYear()}: ${d.depth} cm`;
+        tooltip.style("display", "block").text(label);
+      })
+      .on("mousemove", function(event) {
+        const rect = container.getBoundingClientRect();
+        tooltip
+          .style("left", (event.clientX - rect.left + 12) + "px")
+          .style("top",  (event.clientY - rect.top  - 28) + "px");
+      })
+      .on("mouseout", function() {
+        tooltip.style("display", "none");
+      });
+  });
+}
+</script>
 </body>
 </html>
