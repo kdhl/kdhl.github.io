@@ -353,12 +353,5 @@ function drawChart(raw) {
   });
 }
 </script>
-  <div id="debug" style="font-size:11px;color:#999;padding:8px;word-break:break-all;"></div>
-<script>
-  const p = new URLSearchParams(window.location.search);
-  document.getElementById("debug").textContent =
-    "URL params: " + window.location.search +
-    " | meetpunt: " + (p.get("meetpunt") || "NOT SET");
-</script>
 </body>
 </html>
