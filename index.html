@@ -119,35 +119,10 @@ let lastMeetpuntId = null;
 // The dashboard is already authenticated. We ask the parent for a token
 // via postMessage, or fall back to reading esriJSAPIOAuth from localStorage
 // which ArcGIS JS API writes after login in the same origin session.
+const API-KEY = "AAPTa0f1N5iCqjrpzuycfCqP-Pg..3HDQjMk4SqKPUJED_zvSMPVMJJIPgPaKjErmh2TT0CdUD7wdT4Szl38uIRg5hoQNT0Zvcg3GzhauOZBYYdXVRydleMCedQckjRv8WUaQSk6a2KioWAOw8h7P7Hl9kvIl5fzFmEyKF5PHdEMJaCH_MZlKEKz2Vk1YmmmCMrfGIfgLuyVwHvBc26JSsxb35xP1JgdeLqlQNQXElCmfWhF9g199JYaw__izbA0BwTrzdstlyfti37YjtQ6dlfkWi9U.AT1_GO0d7it9"
+  
 function getToken() {
-  // 1. Try esri JS API session stored in localStorage (same-origin ArcGIS Online)
-  try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && key.includes("esri")) {
-        const val = JSON.parse(localStorage.getItem(key));
-        if (val && val.token) return val.token;
-        if (val && Array.isArray(val.credentials)) {
-          for (const c of val.credentials) {
-            if (c.token) return c.token;
-          }
-        }
-      }
-    }
-  } catch(e) {}
-
-  // 2. Try sessionStorage
-  try {
-    for (let i = 0; i < sessionStorage.length; i++) {
-      const key = sessionStorage.key(i);
-      if (key && key.includes("esri")) {
-        const val = JSON.parse(sessionStorage.getItem(key));
-        if (val && val.token) return val.token;
-      }
-    }
-  } catch(e) {}
-
-  return null;
+  return API-KEY;
 }
 
 // ─── URL PARAM WATCHER ────────────────────────────────────────────────────────
