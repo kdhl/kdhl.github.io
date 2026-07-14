@@ -112,18 +112,19 @@ const FIELD_FK    = "FK";
 
 const MONTHS_NL = ['jan','feb','mrt','apr','mei','jun','jul','aug','sep','okt','nov','dec'];
 
+// ─── AUTH: ArcGIS API key ─────────────────────────────────────────────────────
+// This key is scoped to ONLY this feature layer item and locked to the
+// kdhl.github.io referrer in ArcGIS Online. It is safe to embed here because
+// of that scoping — it cannot be used to access anything else in the org,
+// and only works when called from this domain.
+const API_KEY = "AAPTa0f1N5iCqjrpzuycfCqP-Pg..3HDQjMk4SqKPUJED_zvSMPVMJJIPgPaKjErmh2TT0CdUD7wdT4Szl38uIRg5hoQNT0Zvcg3GzhauOZBYYdXVRydleMCedQckjRv8WUaQSk6a2KioWAOw8h7P7Hl9kvIl5fzFmEyKF5PHdEMJaCH_MZlKEKz2Vk1YmmmCMrfGIfgLuyVwHvBc26JSsxb35xP1JgdeLqlQNQXElCmfWhF9g199JYaw__izbA0BwTrzdstlyfti37YjtQ6dlfkWi9U.AT1_GO0d7it9";
+
+function getToken() {
+  return API_KEY;
+}
+
 // ─── STATE ────────────────────────────────────────────────────────────────────
 let lastMeetpuntId = null;
-
-// ─── TOKEN: inherit from ArcGIS Dashboard parent window ──────────────────────
-// The dashboard is already authenticated. We ask the parent for a token
-// via postMessage, or fall back to reading esriJSAPIOAuth from localStorage
-// which ArcGIS JS API writes after login in the same origin session.
-const API-KEY = "AAPTa0f1N5iCqjrpzuycfCqP-Pg..3HDQjMk4SqKPUJED_zvSMPVMJJIPgPaKjErmh2TT0CdUD7wdT4Szl38uIRg5hoQNT0Zvcg3GzhauOZBYYdXVRydleMCedQckjRv8WUaQSk6a2KioWAOw8h7P7Hl9kvIl5fzFmEyKF5PHdEMJaCH_MZlKEKz2Vk1YmmmCMrfGIfgLuyVwHvBc26JSsxb35xP1JgdeLqlQNQXElCmfWhF9g199JYaw__izbA0BwTrzdstlyfti37YjtQ6dlfkWi9U.AT1_GO0d7it9"
-  
-function getToken() {
-  return API-KEY;
-}
 
 // ─── URL PARAM WATCHER ────────────────────────────────────────────────────────
 // ArcGIS Dashboard rewrites the iframe src when a feature is selected.
@@ -151,12 +152,13 @@ async function loadMeetpunt(fkValue) {
   document.getElementById("meetpunt-label").textContent = "Meetpunt: " + fkValue;
   document.getElementById("meetpunt-sub").textContent = "";
 
-  // GlobalID must be wrapped in { } for ArcGIS GUID queries
+  // NOTE: Only wrap in { } if FK is an Esri GlobalID-type field.
+  // If FK is a plain text field storing the raw GUID, remove the braces below —
+  // otherwise every query will silently return zero features.
   const guidValue = fkValue.startsWith("{") ? fkValue : `{${fkValue}}`;
   const where  = encodeURIComponent(`${FIELD_FK} = '${guidValue}'`);
   const fields = encodeURIComponent(`${FIELD_DATE},${FIELD_DEPTH},${FIELD_FK}`);
 
-  // Build URL — add token only if we have one
   const token = getToken();
   const tokenParam = token ? `&token=${token}` : "";
   const url = `${FEATURE_LAYER_URL}/query?where=${where}&outFields=${fields}&orderByFields=${FIELD_DATE}+ASC&f=json${tokenParam}`;
@@ -166,7 +168,6 @@ async function loadMeetpunt(fkValue) {
     const json = await res.json();
 
     if (json.error) {
-      // Token may have expired — show a helpful message
       if (json.error.code === 498 || json.error.code === 499) {
         document.getElementById("status").textContent = "Sessie verlopen. Herlaad het dashboard en probeer opnieuw.";
       } else {
@@ -213,7 +214,6 @@ function drawChart(raw) {
   const pad      = (depthMax - depthMin) * 0.12 || 10;
 
   const x = d3.scaleTime().domain([minDate, maxDate]).range([0, iw]);
-  // Inverted: larger depth = lower on chart
   const y = d3.scaleLinear().domain([depthMin - pad, depthMax + pad]).range([0, ih]);
 
   const svg = d3.select(container).append("svg")
@@ -223,7 +223,6 @@ function drawChart(raw) {
 
   const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
 
-  // Grid
   y.ticks(5).forEach(t => {
     g.append("line")
       .attr("x1", 0).attr("x2", iw)
@@ -237,7 +236,6 @@ function drawChart(raw) {
       .attr("stroke", "rgba(136,135,128,0.1)").attr("stroke-width", 1);
   });
 
-  // Month count for dot colour
   const moCount = {};
   raw.forEach(d => {
     const k = d.date.getFullYear() + "-" + d.date.getMonth();
@@ -248,7 +246,6 @@ function drawChart(raw) {
     return (b.getFullYear() - a.getFullYear()) * 12 + b.getMonth() - a.getMonth();
   }
 
-  // Line segments
   for (let i = 0; i < raw.length - 1; i++) {
     const a = raw[i], b = raw[i + 1];
     const missing = monthGap(a.date, b.date) > 1;
@@ -260,7 +257,6 @@ function drawChart(raw) {
       .attr("stroke-dasharray", missing ? "6 4" : "none");
   }
 
-  // X axis
   const xAxis = g.append("g").attr("transform", `translate(0,${ih})`);
   xAxis.append("line").attr("x1", 0).attr("x2", iw).attr("stroke", "rgba(136,135,128,0.3)");
   d3.timeMonths(minDate, maxDate).forEach(m => {
@@ -273,7 +269,6 @@ function drawChart(raw) {
       .text(lbl);
   });
 
-  // Y axis
   const yAxis = g.append("g");
   yAxis.append("line").attr("x1", 0).attr("x2", 0).attr("y1", 0).attr("y2", ih).attr("stroke", "rgba(136,135,128,0.3)");
   y.ticks(5).forEach(t => {
@@ -290,7 +285,6 @@ function drawChart(raw) {
     .attr("fill", "#888780").attr("font-size", 12)
     .text("Diepte (cm)");
 
-  // Tooltip
   const tooltip = d3.select(container).append("div")
     .style("position", "absolute")
     .style("background", "#fff")
@@ -302,7 +296,6 @@ function drawChart(raw) {
     .style("box-shadow", "0 2px 8px rgba(0,0,0,0.12)")
     .style("display", "none");
 
-  // Points
   raw.forEach(d => {
     const k     = d.date.getFullYear() + "-" + d.date.getMonth();
     const color = moCount[k] > 1 ? "#E24B4A" : "#378ADD";
