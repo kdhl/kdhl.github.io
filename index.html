@@ -90,7 +90,7 @@
     <span id="meetpunt-sub"></span>
   </div>
   <div class="legend">
-    <div class="legend-item"><span class="dot" style="background:#378ADD;"></span>1 x per maand</div>
+    <div class="legend-item"><span class="dot" style="background:#378ADD;"></span> (CF-GH) 1 x per maand</div>
     <div class="legend-item"><span class="dot" style="background:#E24B4A;"></span> Vaker per maand</div>
     <div class="legend-item"><span class="dashed-box">Stippellijn = ontbrekend</span></div>
   </div>
@@ -102,25 +102,17 @@
 
 <script>
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
-// The metingen feature layer (layer 3)
-const FEATURE_LAYER_URL = "https://services2.arcgis.com/hZdFa5fDjbrKiphq/arcgis/rest/services/waterpeilen_paleispark_WFL1/FeatureServer/3";
-
-// Field names in the metingen layer
+// Field names as returned in the proxy's outFields (must match worker.js)
 const FIELD_DATE  = "datum";
 const FIELD_DEPTH = "meting";
-const FIELD_FK    = "ForeignKey";
 
 const MONTHS_NL = ['jan','feb','mrt','apr','mei','jun','jul','aug','sep','okt','nov','dec'];
 
-// ─── AUTH: ArcGIS API key ─────────────────────────────────────────────────────
-// This key is scoped to ONLY this feature layer item and locked to the
-// kdhl.github.io referrer in ArcGIS Online. It is safe to embed here because
-// of that scoping — it cannot be used to access anything else in the org,
-// and only works when called from this domain.
-const API_KEY = 
-function getToken() {
-  return API_KEY;
-}
+// ─── PROXY: serverless worker holds the real ArcGIS token ────────────────────
+// The browser never sees a token at all — it only ever asks the proxy for
+// one specific meetpunt id, and the proxy attaches the real credential
+// server-side before calling ArcGIS.
+const PROXY_URL = "https://waterpark.b-kraan.workers.dev";
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
 let lastMeetpuntId = null;
@@ -151,27 +143,15 @@ async function loadMeetpunt(fkValue) {
   document.getElementById("meetpunt-label").textContent = "Meetpunt: " + fkValue;
   document.getElementById("meetpunt-sub").textContent = "";
 
-  // NOTE: Only wrap in { } if FK is an Esri GlobalID-type field.
-  // If FK is a plain text field storing the raw GUID, remove the braces below —
-  // otherwise every query will silently return zero features.
-  const guidValue = fkValue.startsWith("{") ? fkValue : `{${fkValue}}`;
-  const where  = encodeURIComponent(`${FIELD_FK} = '${guidValue}'`);
-  const fields = encodeURIComponent(`${FIELD_DATE},${FIELD_DEPTH},${FIELD_FK}`);
-
-  const token = getToken();
-  const tokenParam = token ? `&token=${token}` : "";
-  const url = `${FEATURE_LAYER_URL}/query?where=${where}&outFields=${fields}&orderByFields=${FIELD_DATE}+ASC&f=json${tokenParam}`;
+  const url = `${PROXY_URL}/?meetpunt=${encodeURIComponent(fkValue)}`;
 
   try {
     const res  = await fetch(url);
     const json = await res.json();
 
     if (json.error) {
-      if (json.error.code === 498 || json.error.code === 499) {
-        document.getElementById("status").textContent = "Sessie verlopen. Herlaad het dashboard en probeer opnieuw.";
-      } else {
-        document.getElementById("status").textContent = "Fout: " + json.error.message;
-      }
+      document.getElementById("status").textContent =
+        typeof json.error === "string" ? json.error : ("Fout: " + json.error.message);
       return;
     }
 
